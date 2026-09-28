@@ -1,0 +1,56 @@
+name: Concurrent IP Check
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  check-ip:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        job_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch IP and Create File
+        run: |
+          PUBLIC_IP=$(curl -s --max-time 8 https://checkip.amazonaws.com 2>/dev/null || echo "unknown")
+          TIMESTAMP=$(date +%s)
+          FILENAME="actions_${{ matrix.job_id }}_${TIMESTAMP}_${PUBLIC_IP}"
+          
+          echo "Job ID: ${{ matrix.job_id }}" > "${FILENAME}"
+          echo "Timestamp: ${TIMESTAMP}" >> "${FILENAME}"
+          echo "IP: ${PUBLIC_IP}" >> "${FILENAME}"
+          
+          echo "Created file: ${FILENAME}"
+
+      - name: Safely Push Result
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          sleep $((RANDOM % 10 + 1))
+          
+          for attempt in {1..15}; do
+            git pull --rebase origin main || true
+            git add actions_${{ matrix.job_id }}_*
+            if git commit -m "Add result from job ${{ matrix.job_id }}"; then
+              if git push origin main; then
+                echo "Successfully pushed job ${{ matrix.job_id }}"
+                break
+              fi
+            else
+              echo "No changes or commit failed, retrying..."
+            fi
+            sleep $((RANDOM % 5 + 2))
+          done
